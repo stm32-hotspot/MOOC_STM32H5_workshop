@@ -1,0 +1,654 @@
+STM32H5 Workshop MOOC
+
+-------------------------------------------------------
+STM32H5 workshop - 02 GPIO - Toggle LED lab (beginners)
+-------------------------------------------------------
+in main.c:
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == GPIO_PIN_13){
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+	}
+}
+
+
+-------------------------------------------------------
+STM32H5 workshop - 03 USART - Printf redirection lab (beginners)
+-------------------------------------------------------
+in main.h:
+
+#include <stdio.h>
+
+in main.c:
+
+/* USER CODE BEGIN PFP */
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+/* USER CODE END PFP */
+
+/////////////////////////////////////////////////////
+
+/* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == GPIO_PIN_13){
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+		printf("Hello World \n\r");
+	}
+}
+
+PUTCHAR_PROTOTYPE{
+	/* Place your implementation of fputc here */
+	/* e.g. write a character to USART3 and Loop until the end of transmission */
+	HAL_UART_Transmit(&huart3, (uint8_t *)&ch, 1, 0xFFFF);
+
+	return ch;
+}
+/* USER CODE END 4 */
+
+
+
+-------------------------------------------------------
+STM32H5 workshop - 04 GPDMA - Basic configuration (intermediate)
+-------------------------------------------------------
+in main.c
+
+/* USER CODE BEGIN Includes */
+#include <string.h>
+/* USER CODE END Includes */
+
+///////////////////////////////////////////////////
+
+/* USER CODE BEGIN PV */
+char MyBuffer[] = "Message transfer with DMA\r\n";
+/* USER CODE END PV */
+
+///////////////////////////////////////////////////
+
+Modify the HAL_GPIO_EXTI_Rising_Callback(unit16_t GPIO_Pin) function. Or replace it with below code.
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == GPIO_PIN_13){
+//		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+//		printf("Hello World \n\r");
+		HAL_UART_Transmit_DMA(&huart3, (uint8_t *)MyBuffer, strlen(MyBuffer));
+	}
+}
+
+//////////////////////////////////////////////////
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+}
+
+
+--------------------------------------------------------------------------------------------
+STM32H5 workshop - 05 More advanced GPDMA - Linked Lists (intermediate)
+--------------------------------------------------------------------------------------------
+
+###
+Please add below code within main.c file: 
+
+/* USER CODE BEGIN Includes */
+#include "linked_list.h"
+/* USER CODE END Includes */
+
+/* USER CODE BEGIN PV */
+uint16_t data[64];
+extern DMA_QListTypeDef YourQueueName;
+/* USER CODE END PV */
+
+  /* USER CODE BEGIN 2 */
+  //Setup and initialization of Linked list DMA  
+  MX_YourQueueName_Config();
+  HAL_DMAEx_List_LinkQ(&handle_GPDMA1_Channel6, &YourQueueName);
+
+  // USART3 will be controlled by DMA, therefore we enable it by direct register access
+  ATOMIC_SET_BIT(huart3.Instance->CR3, USART_CR3_DMAT);
+  __HAL_UART_ENABLE(&huart3);
+
+  //Enable Linked list DMA  
+  HAL_DMAEx_List_Start(&handle_GPDMA1_Channel6);
+  // using of Linked List DMA requires special procedure (HAL library supports standard request mede currently)  
+  ADC1->CFGR |= ADC_CFGR_DMAEN;
+  HAL_ADC_Start(&hadc1);
+
+  // Start TIM15 for triggering  
+  HAL_TIM_Base_Start(&htim15);
+  /* USER CODE END 2 */
+  
+  
+
+####
+Please add below code within linked_list.c file:
+
+/* USER CODE BEGIN PM */
+extern uint16_t data[];
+
+
+
+-------------------------------------------------------
+STM32H5 workshop - 06 GPIO, PWR - IO retention in STANDBY mode (intermediate)
+-------------------------------------------------------
+
+Code to be added into main.c file:
+
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+/* USER CODE END Includes */
+
+/* USER CODE BEGIN PD */
+//#define IORETENABLE
+/* USER CODE END PD */
+
+/* USER CODE BEGIN PFP */
+int __io_putchar(int ch)
+{
+    HAL_UART_Transmit(&huart3, (uint8_t *)&ch, 1, 0xFFFF);
+     return ch;
+}
+/* USER CODE END PFP */
+
+/* USER CODE BEGIN 2 */
+    printf("\n\r ****************** IO RETENTION EXAMPLE *****************\n\r");
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+      printf( "LD1 turned on             \r\n");
+      if(READ_BIT(PWR->IORETR, PWR_IORETR_IORETEN)== PWR_IORETR_IORETEN)
+      {
+        printf( "IO retention bit set             \r\n");
+        HAL_Delay(1000);
+        HAL_PWREx_DisableStandbyIORetention();
+        printf( "Disabling IO retention            \r\n");
+        HAL_Delay(10);
+      }
+      printf( " *********************************************************\r\n");
+      printf( " *********** Push user button to enter STANDBY ***********\r\n");
+      printf( " *********************************************************\r\n");
+      while(HAL_GPIO_ReadPin(GPIOC,GPIO_PIN_13)== GPIO_PIN_RESET)
+      {
+          HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+          HAL_Delay(100);
+      }
+      printf( "MCU entering STANDBY: use reset button to wake-up  \r\n");
+      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+      #if defined(IORETENABLE)
+        printf("Enabling IO retention  \r\n");
+        HAL_PWREx_EnableStandbyIORetention();
+      #endif
+
+      printf( " \r\n");
+      HAL_Delay(1000);
+      HAL_PWR_EnterSTANDBYMode();
+/* USER CODE END 2 */
+
+-------------------------------------------------------
+STM32H5 workshop - 07 I3C interface theory and practice (beginners)
+-------------------------------------------------------
+
+There are 4 steps requesting 4 files modification.
+
+//##1 Create new source file Core\Src\i3c_reg_io.c with following content:
+
+#include "i3c_reg_io.h"
+#include <stdio.h>
+
+/* Handle for I3C */
+extern I3C_HandleTypeDef hi3c1;
+
+/* Notifications to be passed from IRQ during enumeration */
+static volatile uint32_t uwTargetCount = 0;
+static volatile uint32_t uwEnumDone = 0;
+static volatile uint64_t lastTargetID = 0;
+
+int32_t BSP_I3C_Init(void){
+    /* Struct for configuring IBI reception */
+    I3C_DeviceConfTypeDef DeviceConf;
+
+    /* Call MX generated initialization */
+    MX_I3C1_Init();
+
+    /* Begin enumeration (dynamic address assignment) process.
+     * Reset dynamic address first (is necessary if only MCU is reset).
+     */
+    printf("Starting enumeration...\n");
+    HAL_I3C_Ctrl_DynAddrAssign_IT(&hi3c1, I3C_RSTDAA_THEN_ENTDAA);
+
+    /* Wait for enumeration to be finished */
+    while(uwEnumDone == 0);
+
+    /* Report I3C device parameters
+     * Expected output (for LSM6DSO):
+     * DCR = 0x44, BCR = 0x7
+     * Full ID =  0x44070b106c000802
+     */
+    printf("Enumeration done successfully...\n");
+    printf("DCR = 0x%02x, BCR = 0x%02x\nFull ID = 0x%08x%08x\n",
+            (unsigned int)((lastTargetID >> 56) & 0xFF), (unsigned int)((lastTargetID >> 48) & 0xFF),
+            (unsigned int)((lastTargetID >> 32) & 0xFFFFFFFFUL), (unsigned int)(lastTargetID & 0xFFFFFFFFUL));
+
+    /* Configure and enable in-band interrupt (IBI) */
+    DeviceConf.DeviceIndex = 1;
+    DeviceConf.TargetDynamicAddr = (0xD7 >> 1);
+    DeviceConf.CtrlRoleReqAck = DISABLE;
+    DeviceConf.CtrlStopTransfer = DISABLE;
+    DeviceConf.IBIAck = ENABLE;
+    DeviceConf.IBIPayload = ENABLE;
+    HAL_I3C_Ctrl_ConfigBusDevices(&hi3c1, &DeviceConf, 1);
+
+    /* Enable IBI interrupt inside I3C peripheral */
+    HAL_I3C_ActivateNotification(&hi3c1, NULL, HAL_I3C_IT_IBIIE);
+
+    return 0;
+}
+
+/* Variable for sending event to MEMS application */
+extern volatile uint8_t MemsEventDetected;
+volatile I3C_CCCInfoTypeDef CCCInfo;
+
+void HAL_I3C_NotifyCallback(I3C_HandleTypeDef *hi3c, uint32_t eventId)
+{
+  if ((eventId & EVENT_ID_IBI) == EVENT_ID_IBI)
+  {
+      /* Process IBI request */
+
+      /* Notify MEMS application */
+      MemsEventDetected = 1;
+      /* Read additional data from the interrupt payload.
+       * Not used in this example.
+       */
+      HAL_I3C_GetCCCInfo(hi3c, EVENT_ID_IBI, (I3C_CCCInfoTypeDef*)&CCCInfo);
+  }
+}
+
+void HAL_I3C_TgtReqDynamicAddrCallback(I3C_HandleTypeDef *hi3c, uint64_t targetPayload)
+{
+  /* Assign address based on targetPayload */
+  /* Here we expect only single I3C target present on the bus */
+
+  /* Send associated dynamic address */
+  HAL_I3C_Ctrl_SetDynAddr(hi3c, (0xD7 >> 1) + uwTargetCount);
+  uwTargetCount++;
+
+  /* Store target ID */
+  lastTargetID = targetPayload;
+}
+
+void HAL_I3C_CtrlDAACpltCallback(I3C_HandleTypeDef *hi3c)
+{
+  /* Enumeration completed */
+  uwEnumDone = 1;
+}
+
+
+void HAL_I3C_ErrorCallback(I3C_HandleTypeDef *hi3c){
+    if(uwEnumDone == 0){
+        printf("Enumeration failed...\n");
+    }
+}
+
+int32_t BSP_I3C_DeInit(void){
+    HAL_I3C_DeInit(&hi3c1);
+    return 0;
+}
+
+int32_t BSP_I3C_WriteReg(uint16_t Addr, uint16_t Reg, uint8_t *pData, uint16_t Length){
+    /* Wait until previous transfer finish */
+    while(!LL_I3C_IsActiveFlag_CFE(hi3c1.Instance));
+
+    /* Start private write transfer (1+N byte = register start address + register values) */
+    LL_I3C_ControllerHandleMessage(hi3c1.Instance,Addr >> 1, Length+1, LL_I3C_DIRECTION_WRITE,
+            LL_I3C_CONTROLLER_MTYPE_PRIVATE, LL_I3C_GENERATE_STOP);
+
+    /* Send register start address */
+    LL_I3C_TransmitData8(hi3c1.Instance, (uint8_t)(Reg & 0xFF));
+
+    while(1){
+        /* Check if we can write more data */
+        if(LL_I3C_IsActiveFlag_TXFNF(hi3c1.Instance)) {
+            if(Length > 0){
+                if(Reg == 0x18){
+                    /* Hack to prevent disabling I3C by X-Cube-MEMS in LSM6DSO */
+                    /* Filter out disabling of I3C interface in CTRL_9_XL register */
+                    LL_I3C_TransmitData8(hi3c1.Instance, (*pData) & 0xFD);
+                }
+                else {
+                    LL_I3C_TransmitData8(hi3c1.Instance, *pData);
+                }
+                Reg++;
+                pData++;
+                Length--;
+            }
+        }
+        /* Check for error flag */
+        if(LL_I3C_IsActiveFlag_ERR(hi3c1.Instance)){
+            LL_I3C_ClearFlag_ERR(hi3c1.Instance);
+            return -1;
+        }
+        /* Check if the transfer has finished */
+        if(LL_I3C_IsActiveFlag_FC(hi3c1.Instance)){
+            LL_I3C_ClearFlag_FC(hi3c1.Instance);
+            return (Length == 0)?0:-1;
+        }
+    }
+    return 0;
+}
+
+
+int32_t BSP_I3C_ReadReg(uint16_t Addr, uint16_t Reg, uint8_t *pData, uint16_t Length){
+    /* Wait until previous transfer finish */
+    while(!LL_I3C_IsActiveFlag_CFE(hi3c1.Instance));
+
+    /* Start private write transfer (1 byte = register start address) */
+    LL_I3C_ControllerHandleMessage(hi3c1.Instance,Addr >> 1, 1, LL_I3C_DIRECTION_WRITE,
+            LL_I3C_CONTROLLER_MTYPE_PRIVATE, LL_I3C_GENERATE_RESTART);
+
+    /* Send register start address */
+    LL_I3C_TransmitData8(hi3c1.Instance, (uint8_t)(Reg & 0xFF));
+
+    /* Start private read transfer (N bytes = register values) */
+    LL_I3C_ControllerHandleMessage(hi3c1.Instance,Addr >> 1, Length, LL_I3C_DIRECTION_READ,
+            LL_I3C_CONTROLLER_MTYPE_PRIVATE, LL_I3C_GENERATE_STOP);
+
+    while(1){
+        /* Check if we can write new data */
+        if(LL_I3C_IsActiveFlag_RXFNE(hi3c1.Instance)) {
+            if(Length > 0){
+                *pData = LL_I3C_ReceiveData8(hi3c1.Instance);
+                pData++;
+                Length--;
+            }
+        }
+        /* Check for error flag */
+        if(LL_I3C_IsActiveFlag_ERR(hi3c1.Instance)){
+            LL_I3C_ClearFlag_ERR(hi3c1.Instance);
+            return -1;
+        }
+        /* Check if the transfer has finished */
+        if(LL_I3C_IsActiveFlag_FC(hi3c1.Instance)){
+            LL_I3C_ClearFlag_FC(hi3c1.Instance);
+            return (Length == 0)?0:-1;
+        }
+    }
+    return 0;
+}
+
+//##2 Create new source file Core\Inc\i3c_reg_io.h with following content:
+
+#ifndef __I3C_REG_IO_H
+#define __I3C_REG_IO_H
+
+#include "main.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+int32_t BSP_I3C_Init(void);
+int32_t BSP_I3C_DeInit(void);
+int32_t BSP_I3C_WriteReg(uint16_t Addr, uint16_t Reg, uint8_t *pData, uint16_t Length);
+int32_t BSP_I3C_ReadReg(uint16_t Addr, uint16_t Reg, uint8_t *pData, uint16_t Length);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __MAIN_H */
+
+//##3 Modify user code section in file MEMS\Target\iks01a3_conf.h:
+
+/* USER CODE BEGIN 1 */
+#include "i3c_reg_io.h"
+
+#define USE_IKS01A3_ENV_SENSOR_HTS221_0                1U
+#define USE_IKS01A3_ENV_SENSOR_LPS22HH_0               1U
+#define USE_IKS01A3_ENV_SENSOR_STTS751_0               1U
+
+#define USE_IKS01A3_MOTION_SENSOR_LSM6DSO_0            1U
+#define USE_IKS01A3_MOTION_SENSOR_LIS2DW12_0           0U
+#define USE_IKS01A3_MOTION_SENSOR_LIS2MDL_0            0U
+
+#define IKS01A3_I2C_Init BSP_I3C_Init
+#define IKS01A3_I2C_DeInit BSP_I3C_DeInit
+#define IKS01A3_I2C_ReadReg BSP_I3C_ReadReg
+#define IKS01A3_I2C_WriteReg BSP_I3C_WriteReg
+#define IKS01A3_GetTick BSP_GetTick
+#define IKS01A3_Delay HAL_Delay
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __IKS01A3_CONF_H__*/
+
+/* Discard rest of the file */
+#if 0
+/* USER CODE END 1 */
+
+//##4 Modify main.c file
+
+  /* USER CODE END I3C1_Init 1 */
+  hi3c1.Instance = I3C1;
+  hi3c1.Mode = HAL_I3C_MODE_CONTROLLER;
+  hi3c1.Init.CtrlBusCharacteristic.SDAHoldTime = HAL_I3C_SDA_HOLD_TIME_1_5;
+  hi3c1.Init.CtrlBusCharacteristic.WaitTime = HAL_I3C_OWN_ACTIVITY_STATE_0;
+  hi3c1.Init.CtrlBusCharacteristic.SCLPPLowDuration = 0x7c;   /* <---- */
+  hi3c1.Init.CtrlBusCharacteristic.SCLI3CHighDuration = 0x7c; /* <---- */
+  hi3c1.Init.CtrlBusCharacteristic.SCLODLowDuration = 0x7c;
+  hi3c1.Init.CtrlBusCharacteristic.SCLI2CHighDuration = 0x7c;
+  hi3c1.Init.CtrlBusCharacteristic.BusFreeDuration = 0x6a;
+  hi3c1.Init.CtrlBusCharacteristic.BusIdleDuration = 0xf8;
+  if (HAL_I3C_Init(&hi3c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  
+
+
+--------------------------------------------------------------------------------------------
+STM32H5 workshop - 08 Readout protection (intermediate)
+--------------------------------------------------------------------------------------------
+
+This exercise will not require any change in the provided code. 
+
+--------------------------------------------------------------------------------------------
+STM32H5 workshop - 09 USB - USBX-CDC lab (experts)
+--------------------------------------------------------------------------------------------
+
+in file app_usbx_device.c
+
+/* USER CODE BEGIN Includes */
+#include "main.h"
+/* USER CODE END Includes */
+
+
+///////////////////////////////////////////////////
+
+/* USER CODE BEGIN PV */
+extern PCD_HandleTypeDef hpcd_USB_DRD_FS;
+static TX_THREAD ux_cdc_write_thread;
+TX_SEMAPHORE semaphore;
+/* USER CODE END PV */
+
+  /* USER CODE BEGIN MX_USBX_Device_Init1 */
+
+  /* Allocate the stack for usbx cdc acm write thread */
+  if (tx_byte_allocate(byte_pool, (VOID **) &pointer, 1024, TX_NO_WAIT) != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
+  }
+
+  /*create semaphore to signal user push-button press*/
+  tx_semaphore_create(&semaphore, "semaphore", 1);
+
+  /* Create the usbx_cdc_acm_write_thread_entry thread */
+  if (tx_thread_create(&ux_cdc_write_thread, "cdc_acm_write_usbx_app_thread_entry",
+                       usbx_cdc_acm_write_thread_entry, 1, pointer,
+                       1024, 9, 9, TX_NO_TIME_SLICE,
+                       TX_AUTO_START) != TX_SUCCESS)
+  {
+    return TX_THREAD_ERROR;
+  }
+
+  /* USER CODE END MX_USBX_Device_Init1 */
+
+///////////////////////////////////////////////////
+
+  /* USER CODE BEGIN app_ux_device_thread_entry */
+  TX_PARAMETER_NOT_USED(thread_input);
+
+  HAL_PWREx_EnableVddUSB();
+
+  /* USB_DRD_FS init function */
+  MX_USB_PCD_Init();
+
+  /*USB packet memory area configuration*/
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x00, PCD_SNG_BUF, 0x14);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x80, PCD_SNG_BUF, 0x54);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, USBD_CDCACM_EPOUT_ADDR, PCD_SNG_BUF, 0x94);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, USBD_CDCACM_EPIN_ADDR, PCD_SNG_BUF, 0x98);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, USBD_CDCACM_EPINCMD_ADDR, PCD_SNG_BUF, 0x9C);
+
+  /* initialize the device controller driver*/
+  ux_dcd_stm32_initialize((ULONG)USB_DRD_FS, (ULONG)&hpcd_USB_DRD_FS);
+
+  /* Start device USB */
+  HAL_PCD_Start(&hpcd_USB_DRD_FS);
+
+  while(1);
+  /* USER CODE END app_ux_device_thread_entry */
+
+
+///////////////////////////////////////////////////
+
+
+/* USER CODE BEGIN 1 */
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+	if (GPIO_Pin == GPIO_PIN_13)
+	{
+		 tx_semaphore_put(&semaphore);
+	}
+}
+/* USER CODE END 1 */
+
+
+///////////////////////////////////////////////////
+
+in file ux_device_cdc_acm.c
+
+/* USER CODE BEGIN Includes */
+#include "main.h"
+#include "string.h"
+/* USER CODE END Includes */
+
+///////////////////////////////////////////////////
+
+/* USER CODE BEGIN PV */
+
+UX_SLAVE_CLASS_CDC_ACM  *cdc_acm;
+
+UX_SLAVE_CLASS_CDC_ACM_LINE_CODING_PARAMETER CDC_VCP_LineCoding =
+{
+  115200, /* baud rate */
+  0x00,   /* stop bits-1 */
+  0x00,   /* parity - none */
+  0x08    /* nb. of bits 8 */
+};
+
+const char Tx_Buffer[]="Hello World\r\n";
+
+extern TX_SEMAPHORE semaphore;
+/* USER CODE END PV */
+
+///////////////////////////////////////////////////
+
+
+  /* USER CODE BEGIN USBD_CDC_ACM_Activate */
+
+  /* Save the CDC instance */
+  cdc_acm = (UX_SLAVE_CLASS_CDC_ACM*) cdc_acm_instance;
+
+  /* Set device class_cdc_acm with default parameters */
+  if (ux_device_class_cdc_acm_ioctl(cdc_acm, UX_SLAVE_CLASS_CDC_ACM_IOCTL_SET_LINE_CODING,
+                                    &CDC_VCP_LineCoding) != UX_SUCCESS)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE END USBD_CDC_ACM_Activate */
+
+
+//////////////////////////////////////////////////
+
+
+  /* USER CODE BEGIN USBD_CDC_ACM_ParameterChange */
+  UX_PARAMETER_NOT_USED(cdc_acm_instance);
+
+  ULONG request;
+  UX_SLAVE_TRANSFER *transfer_request;
+  UX_SLAVE_DEVICE *device;
+
+  /* Get the pointer to the device.  */
+  device = &_ux_system_slave -> ux_system_slave_device;
+
+  /* Get the pointer to the transfer request associated with the control endpoint. */
+  transfer_request = &device -> ux_slave_device_control_endpoint.ux_slave_endpoint_transfer_request;
+
+  request = *(transfer_request -> ux_slave_transfer_request_setup + UX_SETUP_REQUEST);
+
+  switch (request)
+  {
+    case UX_SLAVE_CLASS_CDC_ACM_SET_LINE_CODING :
+
+      /* Get the Line Coding parameters */
+      if (ux_device_class_cdc_acm_ioctl(cdc_acm, UX_SLAVE_CLASS_CDC_ACM_IOCTL_GET_LINE_CODING,
+                                        &CDC_VCP_LineCoding) != UX_SUCCESS)
+      {
+        Error_Handler();
+      }
+      break;
+
+    case UX_SLAVE_CLASS_CDC_ACM_GET_LINE_CODING :
+
+      /* Set the Line Coding parameters */
+      if (ux_device_class_cdc_acm_ioctl(cdc_acm, UX_SLAVE_CLASS_CDC_ACM_IOCTL_SET_LINE_CODING,
+                                        &CDC_VCP_LineCoding) != UX_SUCCESS)
+      {
+        Error_Handler();
+      }
+      break;
+
+    case UX_SLAVE_CLASS_CDC_ACM_SET_CONTROL_LINE_STATE :
+    default :
+      break;
+  }
+  /* USER CODE END USBD_CDC_ACM_ParameterChange */
+
+
+///////////////////////////////////////////////////
+
+/* USER CODE BEGIN 1 */
+VOID usbx_cdc_acm_write_thread_entry(ULONG thread_input)
+{
+	UX_PARAMETER_NOT_USED(thread_input);
+	ULONG actual_length;
+	while (1)
+	{
+		/*wait for button press*/
+		tx_semaphore_get(&semaphore, TX_WAIT_FOREVER);
+
+		/*tranmit data*/
+		ux_device_class_cdc_acm_write(cdc_acm, (UCHAR *)(&Tx_Buffer), (strlen(Tx_Buffer)), &actual_length);
+	}
+
+}
+/* USER CODE END 1 */
+
+
+///////////////////////////////////////////////////
+
+in file ux_device_class_cdc_acm.h
+
+/* USER CODE BEGIN EFP */
+VOID usbx_cdc_acm_write_thread_entry(ULONG thread_input);
+/* USER CODE END EFP */
+
