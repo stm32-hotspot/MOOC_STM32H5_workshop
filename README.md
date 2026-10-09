@@ -1,7 +1,6 @@
 # MOOC STM32H5 workshop
 
-WARNING  : 
-    This material has been created in 2024 and is delivered as it is.
+Disclaimer: This material was created in 2024 and is delivered as is.
 
 ## MOOC purpose 
 Performance, communication, and security features of the STM32H5. Our experts demonstrate how these features can enhance your design.
